@@ -1,0 +1,1193 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>额度窗口排班器</title>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --card: #ffffff;
+      --text: #17181c;
+      --muted: #656b76;
+      --line: #dfe3ea;
+      --work: #2f6fed;
+      --quota: #20242c;
+      --quota-soft: #e9ebef;
+      --warn: #9b5c00;
+      --warn-bg: #fff6e6;
+      --good: #0a6b42;
+      --good-bg: #eaf8f1;
+      --radius: 18px;
+      --shadow: 0 8px 30px rgba(20, 24, 40, .07);
+    }
+
+    * { box-sizing: border-box; }
+    html { color-scheme: light; }
+
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+                   "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .wrap {
+      width: min(1480px, calc(100% - 28px));
+      margin: 28px auto 56px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(28px, 4vw, 42px);
+      letter-spacing: -0.04em;
+    }
+
+    .lead {
+      margin: 0 0 22px;
+      color: var(--muted);
+      line-height: 1.7;
+      max-width: 980px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid rgba(0,0,0,.06);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 22px;
+      margin-bottom: 18px;
+    }
+
+    .card h2 {
+      margin: 0 0 14px;
+      font-size: 19px;
+      letter-spacing: -0.02em;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+      margin: 0 0 18px;
+    }
+
+    .timeline-shell {
+      position: relative;
+      padding-top: 28px;
+      margin-top: 4px;
+      user-select: none;
+      touch-action: none;
+      width: 100%;
+    }
+
+    .hour-labels {
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 22px;
+      pointer-events: none;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .hour-label {
+      position: absolute;
+      transform: translateX(-50%);
+      white-space: nowrap;
+    }
+
+    .hour-label:first-child { transform: translateX(0); }
+    .hour-label:last-child { transform: translateX(-100%); }
+
+    #timeline {
+      position: relative;
+      width: 100%;
+      height: 82px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+      cursor: crosshair;
+      background:
+        repeating-linear-gradient(
+          to right,
+          transparent 0,
+          transparent calc(4.1666667% - 1px),
+          rgba(0,0,0,.07) calc(4.1666667% - 1px),
+          rgba(0,0,0,.07) 4.1666667%
+        ),
+        #fafbfc;
+    }
+
+    #workCanvas {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .selection {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      background: var(--work);
+      opacity: .92;
+    }
+
+    .timeline-caption {
+      margin-top: 10px;
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--work);
+    }
+
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(190px, 1fr));
+      gap: 14px;
+      align-items: end;
+    }
+
+    @media (max-width: 980px) {
+      .settings-grid { grid-template-columns: repeat(2, minmax(170px, 1fr)); }
+    }
+
+    @media (max-width: 560px) {
+      .settings-grid { grid-template-columns: 1fr; }
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    label {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    input[type="number"], select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 11px 12px;
+      font: inherit;
+      color: inherit;
+      background: #fff;
+      outline: none;
+    }
+
+    input[type="number"]:focus, select:focus {
+      border-color: #8daef2;
+      box-shadow: 0 0 0 3px rgba(47,111,237,.12);
+    }
+
+    .value-unit {
+      display: grid;
+      grid-template-columns: 1fr 98px;
+      gap: 8px;
+    }
+
+    .inline-time {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr auto;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .inline-time span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .checks {
+      display: flex;
+      gap: 18px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+    }
+
+    .toggle-row {
+      display: flex;
+      gap: 9px;
+      align-items: flex-start;
+      min-width: 260px;
+    }
+
+    input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      margin-top: 1px;
+    }
+
+    .toggle-copy {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+
+    button {
+      appearance: none;
+      border: 0;
+      border-radius: 12px;
+      padding: 11px 15px;
+      font: inherit;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    .primary {
+      background: var(--text);
+      color: #fff;
+    }
+
+    .secondary {
+      background: #eef1f6;
+      color: var(--text);
+    }
+
+    .status {
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .status.good {
+      color: var(--good);
+      background: var(--good-bg);
+    }
+
+    .status.warn {
+      color: var(--warn);
+      background: var(--warn-bg);
+    }
+
+    .result-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+      margin-bottom: 16px;
+    }
+
+    .metric {
+      font-size: 36px;
+      font-weight: 800;
+      letter-spacing: -0.05em;
+      line-height: 1;
+    }
+
+    .metric-sub {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 6px;
+    }
+
+    .result-timeline {
+      position: relative;
+      height: 120px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+      margin: 12px 0 20px;
+      background:
+        repeating-linear-gradient(
+          to right,
+          transparent 0,
+          transparent calc(4.1666667% - 1px),
+          rgba(0,0,0,.07) calc(4.1666667% - 1px),
+          rgba(0,0,0,.07) 4.1666667%
+        ),
+        #fafbfc;
+    }
+
+    .lane-label {
+      position: absolute;
+      left: 8px;
+      z-index: 4;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: rgba(255,255,255,.85);
+      color: var(--muted);
+      font-size: 11px;
+      pointer-events: none;
+    }
+
+    .lane-label.work { top: 9px; }
+    .lane-label.quota { top: 59px; }
+
+    .result-work {
+      position: absolute;
+      top: 28px;
+      height: 18px;
+      background: var(--work);
+      border-radius: 6px;
+      opacity: .92;
+    }
+
+    .quota-band {
+      position: absolute;
+      top: 78px;
+      height: 22px;
+      background: var(--quota-soft);
+      border: 1px solid #aeb4bf;
+      border-radius: 7px;
+    }
+
+    .trigger-mark {
+      position: absolute;
+      top: 68px;
+      bottom: 8px;
+      width: 2px;
+      background: var(--quota);
+      z-index: 3;
+    }
+
+    .trigger-mark::before {
+      content: "";
+      position: absolute;
+      top: -4px;
+      left: -4px;
+      width: 10px;
+      height: 10px;
+      background: var(--quota);
+      border-radius: 999px;
+    }
+
+    .schedule-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .schedule-item {
+      display: grid;
+      grid-template-columns: 92px 1fr auto;
+      gap: 14px;
+      align-items: center;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+    }
+
+    @media (max-width: 680px) {
+      .schedule-item { grid-template-columns: 76px 1fr; }
+      .schedule-item .badge { grid-column: 2; justify-self: start; }
+    }
+
+    .time-big {
+      font-weight: 800;
+      font-size: 20px;
+      letter-spacing: -0.03em;
+    }
+
+    .schedule-copy {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .schedule-copy strong {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .badge {
+      border-radius: 999px;
+      padding: 7px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+      background: #eef1f6;
+      color: #4a5260;
+    }
+
+    .badge.off {
+      background: var(--warn-bg);
+      color: var(--warn);
+    }
+
+    .small {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .prompt-panel {
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      background: #fafbfc;
+    }
+
+    .prompt-panel.hidden {
+      display: none;
+    }
+
+    .prompt-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 9px;
+    }
+
+    .prompt-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .copy-btn {
+      padding: 8px 11px;
+      border-radius: 10px;
+      background: #eef1f6;
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    #automationPrompt {
+      width: 100%;
+      min-height: 96px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 11px 12px;
+      font: inherit;
+      line-height: 1.55;
+      color: var(--text);
+      background: #fff;
+      outline: none;
+    }
+
+    #automationPrompt:focus {
+      border-color: #8daef2;
+      box-shadow: 0 0 0 3px rgba(47,111,237,.12);
+    }
+
+    .prompt-help {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <h1>额度窗口排班器</h1>
+    <p class="lead">
+      在 24 小时时间轴上拖动鼠标设置每天的工作时间，可设置多个互不连续的区间。
+    </p>
+
+    <section class="card">
+      <h2>1. 设置每天的工作时间</h2>
+      <p class="hint">
+        时间轴从 04:00 开始，到次日 04:00 结束。从空白处拖动可添加工作时间，从已有工作区开始拖动可擦除。
+      </p>
+
+      <div class="timeline-shell">
+        <div class="hour-labels" id="hourLabels"></div>
+        <div id="timeline" aria-label="24小时时间轴">
+          <div id="workCanvas"></div>
+        </div>
+      </div>
+
+      <div class="timeline-caption">
+        <span class="pill"><span class="dot"></span><span id="intervalText">尚未设置工作时间</span></span>
+        <span class="pill">总工作时长 <strong id="totalWork">0 小时</strong></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2. 设置额度参数</h2>
+
+      <div class="settings-grid">
+        <div class="field">
+          <label>额度窗口长度</label>
+          <div class="value-unit">
+            <input id="windowValue" type="number" min="1" step="1" value="5" />
+            <select id="windowUnit">
+              <option value="60" selected>小时</option>
+              <option value="1">分钟</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>时间轴精度</label>
+          <select id="precision">
+            <option value="5">5 分钟</option>
+            <option value="10" selected>10 分钟</option>
+            <option value="30">30 分钟</option>
+            <option value="60">1 小时</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>每个额度池至少覆盖的工作时间</label>
+          <div class="inline-time">
+            <input id="minHours" type="number" min="0" max="24" step="1" value="2" />
+            <span>小时</span>
+            <input id="minMinutes" type="number" min="0" max="55" step="5" value="0" />
+            <span>分钟</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="checks">
+        <div class="toggle-row">
+          <input id="requireCycle" type="checkbox" checked />
+          <div class="toggle-copy">
+            <strong style="color:var(--text)">要求循环</strong><br />
+            勾选后，方案必须能够按同一组触发时间每天重复。
+          </div>
+        </div>
+
+        <div class="toggle-row">
+          <input id="allowOffWorkTrigger" type="checkbox" checked />
+          <div class="toggle-copy">
+            <strong style="color:var(--text)">触发可以在非工作时间内</strong><br />
+            默认勾选。允许用一个极小任务在非工作时间启动额度窗口。
+          </div>
+        </div>
+      </div>
+
+      <div id="promptPanel" class="prompt-panel">
+        <div class="prompt-head">
+          <div class="prompt-title">非工作时间触发提示词</div>
+          <button class="copy-btn" id="copyPromptBtn" type="button">复制提示词</button>
+        </div>
+        <textarea id="automationPrompt">确认当前使用的是 Work 模式。每天在 UTC+8 时间 {TIME}，向我发送“你好”两个字，不做额外说明或思考。</textarea>
+        <div class="prompt-help" id="promptHelp">
+          计算方案后，{TIME} 会自动替换为需要在非工作时间触发额度窗口的时间。
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="primary" id="optimizeBtn">计算最优方案</button>
+        <button class="secondary" id="exampleBtn">载入默认工作时间</button>
+        <button class="secondary" id="clearBtn">清空</button>
+      </div>
+
+      <div id="status" class="status good">
+        假设一个额度池首次使用后开始计时，达到设定的额度窗口长度后恢复；恢复后可等待到任意时刻再首次使用下一池。
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="result-head">
+        <div>
+          <h2 style="margin-bottom:6px">3. 最优方案</h2>
+          <div class="small" id="resultSummary">设置工作时间后点击“计算最优方案”。</div>
+        </div>
+        <div style="text-align:right">
+          <div class="metric" id="poolCount">—</div>
+          <div class="metric-sub">额度池</div>
+        </div>
+      </div>
+
+      <div class="timeline-shell" style="padding-top:28px">
+        <div class="hour-labels" id="resultHourLabels"></div>
+        <div class="result-timeline" id="resultTimeline">
+          <span class="lane-label work">工作</span>
+          <span class="lane-label quota">额度池</span>
+        </div>
+      </div>
+
+      <div class="schedule-list" id="scheduleList"></div>
+    </section>
+  </main>
+
+<script>
+(() => {
+  const DAY = 1440;
+  const DISPLAY_START = 4 * 60; // 04:00
+  const work = new Array(DAY).fill(false); // minute-level truth
+
+  const timeline = document.getElementById('timeline');
+  const workCanvas = document.getElementById('workCanvas');
+  const hourLabels = document.getElementById('hourLabels');
+  const resultHourLabels = document.getElementById('resultHourLabels');
+  const intervalText = document.getElementById('intervalText');
+  const totalWork = document.getElementById('totalWork');
+
+  const windowValue = document.getElementById('windowValue');
+  const windowUnit = document.getElementById('windowUnit');
+  const precision = document.getElementById('precision');
+  const minHours = document.getElementById('minHours');
+  const minMinutes = document.getElementById('minMinutes');
+  const requireCycle = document.getElementById('requireCycle');
+  const allowOffWorkTrigger = document.getElementById('allowOffWorkTrigger');
+  const promptPanel = document.getElementById('promptPanel');
+  const automationPrompt = document.getElementById('automationPrompt');
+  const promptHelp = document.getElementById('promptHelp');
+  const copyPromptBtn = document.getElementById('copyPromptBtn');
+
+  const optimizeBtn = document.getElementById('optimizeBtn');
+  const exampleBtn = document.getElementById('exampleBtn');
+  const clearBtn = document.getElementById('clearBtn');
+
+  const status = document.getElementById('status');
+  const resultSummary = document.getElementById('resultSummary');
+  const poolCount = document.getElementById('poolCount');
+  const resultTimeline = document.getElementById('resultTimeline');
+  const scheduleList = document.getElementById('scheduleList');
+
+  let dragging = false;
+  let dragStartDisplayMinute = 0;
+  let dragMode = true;
+  let dragSnapshot = null;
+
+  function mod(n, m) {
+    return ((n % m) + m) % m;
+  }
+
+  function fmtMinute(minute, withDay = false) {
+    const dayOffset = Math.floor(minute / DAY);
+    const m = mod(minute, DAY);
+    const h = Math.floor(m / 60);
+    const mm = m % 60;
+    const base = `${String(h).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+    if (!withDay || dayOffset === 0) return base;
+    if (dayOffset === 1) return `次日 ${base}`;
+    if (dayOffset > 1) return `+${dayOffset}日 ${base}`;
+    return base;
+  }
+
+  function fmtDuration(minutes) {
+    minutes = Math.round(minutes);
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    if (h && m) return `${h}小时${m}分钟`;
+    if (h) return `${h}小时`;
+    return `${m}分钟`;
+  }
+
+  function displayMinuteToClock(displayMinute) {
+    return mod(DISPLAY_START + displayMinute, DAY);
+  }
+
+  function clockMinuteToDisplay(clockMinute) {
+    return mod(clockMinute - DISPLAY_START, DAY);
+  }
+
+  function renderHourLabelsInto(container) {
+    container.innerHTML = '';
+    for (let offset = 0; offset <= 24; offset += 2) {
+      const s = document.createElement('span');
+      s.className = 'hour-label';
+      s.style.left = `${offset / 24 * 100}%`;
+      const absolute = DISPLAY_START + offset * 60;
+      const clock = mod(absolute, DAY);
+      const h = Math.floor(clock / 60);
+      s.textContent = offset === 24
+        ? '次日 04:00'
+        : `${String(h).padStart(2,'0')}:00`;
+      container.appendChild(s);
+    }
+  }
+
+  function currentPrecision() {
+    return Number(precision.value);
+  }
+
+  function currentWindowMinutes() {
+    const v = Math.max(1, Number(windowValue.value || 1));
+    const unit = Number(windowUnit.value);
+    return Math.max(currentPrecision(), Math.round(v * unit));
+  }
+
+  function currentMinCoverage() {
+    const h = Math.max(0, Math.floor(Number(minHours.value || 0)));
+    const rawM = Math.max(0, Math.min(55, Math.floor(Number(minMinutes.value || 0))));
+    const m = Math.floor(rawM / 5) * 5;
+    minHours.value = h;
+    minMinutes.value = m;
+    return h * 60 + m;
+  }
+
+  function snapDisplayMinute(raw) {
+    const p = currentPrecision();
+    const snapped = Math.floor(raw / p) * p;
+    return Math.max(0, Math.min(DAY - p, snapped));
+  }
+
+  function displayMinuteFromPointer(evt) {
+    const rect = timeline.getBoundingClientRect();
+    const x = Math.min(rect.width - 0.001, Math.max(0, evt.clientX - rect.left));
+    const raw = x / rect.width * DAY;
+    return snapDisplayMinute(raw);
+  }
+
+  function setDisplayRange(startDisplay, endDisplay, value) {
+    const p = currentPrecision();
+    const a = Math.min(startDisplay, endDisplay);
+    const b = Math.max(startDisplay, endDisplay) + p;
+
+    for (let d = a; d < Math.min(DAY, b); d++) {
+      work[displayMinuteToClock(d)] = value;
+    }
+  }
+
+  function getClockIntervals() {
+    const intervals = [];
+    let start = null;
+    for (let i = 0; i <= DAY; i++) {
+      const v = i < DAY ? work[i] : false;
+      if (v && start === null) start = i;
+      if (!v && start !== null) {
+        intervals.push([start, i]);
+        start = null;
+      }
+    }
+    return intervals;
+  }
+
+  function getDisplayIntervals() {
+    const arr = new Array(DAY);
+    for (let d = 0; d < DAY; d++) arr[d] = work[displayMinuteToClock(d)];
+
+    const intervals = [];
+    let start = null;
+    for (let d = 0; d <= DAY; d++) {
+      const v = d < DAY ? arr[d] : false;
+      if (v && start === null) start = d;
+      if (!v && start !== null) {
+        intervals.push([start, d]);
+        start = null;
+      }
+    }
+    return intervals;
+  }
+
+  function appendBand(container, cls, leftMinute, widthMinutes, topMode='normal') {
+    if (widthMinutes <= 0) return;
+    const el = document.createElement('div');
+    el.className = cls;
+    el.style.left = `${leftMinute / DAY * 100}%`;
+    el.style.width = `${widthMinutes / DAY * 100}%`;
+    container.appendChild(el);
+  }
+
+  function renderWork() {
+    workCanvas.innerHTML = '';
+    const displayIntervals = getDisplayIntervals();
+
+    displayIntervals.forEach(([a,b]) => {
+      const seg = document.createElement('div');
+      seg.className = 'selection';
+      seg.style.left = `${a / DAY * 100}%`;
+      seg.style.width = `${(b-a) / DAY * 100}%`;
+      workCanvas.appendChild(seg);
+    });
+
+    const clockIntervals = getClockIntervals();
+    if (!clockIntervals.length) {
+      intervalText.textContent = '尚未设置工作时间';
+    } else {
+      intervalText.textContent = clockIntervals.map(([a,b]) => {
+        const end = b === DAY ? '24:00' : fmtMinute(b);
+        return `${fmtMinute(a)}–${end}`;
+      }).join('，');
+    }
+
+    totalWork.textContent = fmtDuration(work.reduce((s,v) => s + (v ? 1 : 0), 0));
+    renderResultTimeline([]);
+  }
+
+  timeline.addEventListener('pointerdown', evt => {
+    timeline.setPointerCapture(evt.pointerId);
+    dragging = true;
+    dragStartDisplayMinute = displayMinuteFromPointer(evt);
+    dragSnapshot = work.slice();
+    const clockMinute = displayMinuteToClock(dragStartDisplayMinute);
+    dragMode = !work[clockMinute];
+    applyDrag(dragStartDisplayMinute);
+  });
+
+  function applyDrag(currentDisplayMinute) {
+    work.splice(0, DAY, ...dragSnapshot);
+    setDisplayRange(dragStartDisplayMinute, currentDisplayMinute, dragMode);
+    renderWork();
+  }
+
+  timeline.addEventListener('pointermove', evt => {
+    if (!dragging) return;
+    applyDrag(displayMinuteFromPointer(evt));
+  });
+
+  timeline.addEventListener('pointerup', evt => {
+    if (!dragging) return;
+    dragging = false;
+    applyDrag(displayMinuteFromPointer(evt));
+  });
+
+  timeline.addEventListener('pointercancel', () => {
+    dragging = false;
+  });
+
+  function overlapMinutes(startClock, windowMinutes) {
+    let count = 0;
+    for (let k = 0; k < windowMinutes; k++) {
+      if (work[mod(startClock + k, DAY)]) count++;
+    }
+    return count;
+  }
+
+  function candidateTimes() {
+    const p = currentPrecision();
+    const times = [];
+    // 使用“04:00 → 次日04:00”的绝对时间顺序。
+    // 例如次日00:00表示为1440，而不是0，这样非循环模式可以正确得到跨午夜的第5个窗口。
+    for (let d = 0; d < DAY; d += p) {
+      times.push(DISPLAY_START + d);
+    }
+    return times;
+  }
+
+  function better(a, b) {
+    if (!a) return b;
+    if (!b) return a;
+    if (a.count !== b.count) return a.count > b.count ? a : b;
+    if (a.overlap !== b.overlap) return a.overlap > b.overlap ? a : b;
+    if (a.offWorkTriggers !== b.offWorkTriggers) {
+      return a.offWorkTriggers < b.offWorkTriggers ? a : b;
+    }
+    const sa = a.starts.reduce((x,y) => x+y, 0);
+    const sb = b.starts.reduce((x,y) => x+y, 0);
+    return sa > sb ? a : b;
+  }
+
+  function stateSingle(t, overlap) {
+    return {
+      starts: [t],
+      count: 1,
+      overlap,
+      offWorkTriggers: work[mod(t, DAY)] ? 0 : 1
+    };
+  }
+
+  function addState(parent, t, overlap) {
+    return {
+      starts: parent.starts.concat(t),
+      count: parent.count + 1,
+      overlap: parent.overlap + overlap,
+      offWorkTriggers: parent.offWorkTriggers + (work[mod(t, DAY)] ? 0 : 1)
+    };
+  }
+
+  function weightedLine(candidates, overlapMap, windowMinutes, baseState = null) {
+    if (!candidates.length) return baseState;
+
+    const prev = new Array(candidates.length).fill(-1);
+    let left = 0;
+
+    for (let j = 0; j < candidates.length; j++) {
+      while (left < j && candidates[left] <= candidates[j] - windowMinutes) left++;
+      prev[j] = left - 1;
+    }
+
+    const dp = new Array(candidates.length);
+
+    for (let j = 0; j < candidates.length; j++) {
+      const skip = j > 0 ? dp[j-1] : baseState;
+      const parent = prev[j] >= 0 ? dp[prev[j]] : baseState;
+      const take = parent
+        ? addState(parent, candidates[j], overlapMap.get(candidates[j]))
+        : stateSingle(candidates[j], overlapMap.get(candidates[j]));
+      dp[j] = better(skip, take);
+    }
+
+    return dp[dp.length - 1];
+  }
+
+  function optimize() {
+    const p = currentPrecision();
+    const W = currentWindowMinutes();
+    const minCov = currentMinCoverage();
+
+    if (W > DAY && requireCycle.checked) {
+      showResult(null, W, minCov);
+      status.className = 'status warn';
+      status.textContent = '额度窗口长度超过24小时，无法形成每天重复的循环方案。';
+      return;
+    }
+
+    const times = candidateTimes();
+    const overlapMap = new Map();
+    const eligible = [];
+
+    for (const t of times) {
+      const ov = overlapMinutes(t, W);
+      overlapMap.set(t, ov);
+      if (ov >= minCov && (allowOffWorkTrigger.checked || work[mod(t, DAY)])) {
+        eligible.push(t);
+      }
+    }
+
+    let best = null;
+
+    if (!requireCycle.checked) {
+      best = weightedLine(eligible, overlapMap, W, null);
+    } else {
+      for (const first of eligible) {
+        const base = stateSingle(first, overlapMap.get(first));
+        const candidates = eligible.filter(t => {
+          if (t <= first) return false;
+          if (t - first < W) return false;
+          if (first + DAY - t < W) return false;
+          return true;
+        });
+
+        const candidateBest = weightedLine(candidates, overlapMap, W, base);
+        best = better(best, candidateBest);
+      }
+    }
+
+    showResult(best, W, minCov);
+
+    if (best) {
+      status.className = 'status good';
+      status.textContent = requireCycle.checked
+        ? `已按“可每天重复”的约束计算。当前时间精度为 ${p} 分钟。`
+        : `已按“单日最大化”计算，不要求次日继续保持同一组触发时间。当前时间精度为 ${p} 分钟。`;
+    }
+  }
+
+  function splitDisplayCircular(clockStart, lengthMinutes) {
+    const dStart = clockMinuteToDisplay(clockStart);
+    const pieces = [];
+    let remain = Math.min(lengthMinutes, DAY);
+
+    const firstLen = Math.min(remain, DAY - dStart);
+    pieces.push([dStart, firstLen]);
+    remain -= firstLen;
+
+    if (remain > 0) {
+      pieces.push([0, remain]);
+    }
+
+    return pieces;
+  }
+
+  function renderResultTimeline(starts) {
+    resultTimeline.querySelectorAll('.result-work,.quota-band,.trigger-mark').forEach(el => el.remove());
+
+    getDisplayIntervals().forEach(([a,b]) => {
+      appendBand(resultTimeline, 'result-work', a, b-a);
+    });
+
+    if (!starts.length) return;
+
+    const W = currentWindowMinutes();
+
+    starts.forEach(t => {
+      splitDisplayCircular(t, W).forEach(([left,width]) => {
+        appendBand(resultTimeline, 'quota-band', left, width);
+      });
+
+      const mark = document.createElement('div');
+      mark.className = 'trigger-mark';
+      mark.style.left = `${clockMinuteToDisplay(t) / DAY * 100}%`;
+      resultTimeline.appendChild(mark);
+    });
+  }
+
+  function workSegmentsInsideWindow(startClock, W) {
+    const segments = [];
+    let open = null;
+
+    for (let k = 0; k <= W; k++) {
+      const v = k < W ? work[mod(startClock + k, DAY)] : false;
+      if (v && open === null) open = k;
+      if (!v && open !== null) {
+        segments.push([startClock + open, startClock + k]);
+        open = null;
+      }
+    }
+    return segments;
+  }
+
+  function showResult(best, W, minCov) {
+    scheduleList.innerHTML = '';
+
+    if (!best) {
+      poolCount.textContent = '0';
+      resultSummary.textContent = '当前参数下没有满足要求的方案。';
+      renderResultTimeline([]);
+      if (allowOffWorkTrigger.checked) buildAutomationPrompt(null);
+      return;
+    }
+
+    best.starts.sort((a,b) => a-b);
+    poolCount.textContent = String(best.count);
+    resultSummary.textContent =
+      `${requireCycle.checked ? '循环方案' : '单日方案'}共 ${best.count} 个额度池，` +
+      `累计覆盖 ${fmtDuration(best.overlap)} 的工作时间，` +
+      `${best.offWorkTriggers} 次触发发生在工作时间外。`;
+
+    renderResultTimeline(best.starts);
+    if (allowOffWorkTrigger.checked) buildAutomationPrompt(best);
+
+    best.starts.forEach((t, idx) => {
+      const reset = t + W;
+      const nextStart = idx < best.starts.length - 1
+        ? best.starts[idx + 1]
+        : (requireCycle.checked ? best.starts[0] + DAY : null);
+
+      const idle = nextStart == null ? null : Math.max(0, nextStart - reset);
+      const segments = workSegmentsInsideWindow(t, W).map(([a,b]) =>
+        `${fmtMinute(a, true)}–${fmtMinute(b, true)}`
+      );
+
+      const item = document.createElement('div');
+      item.className = 'schedule-item';
+
+      const time = document.createElement('div');
+      time.className = 'time-big';
+      time.textContent = fmtMinute(t, true);
+
+      const copy = document.createElement('div');
+      copy.className = 'schedule-copy';
+      copy.innerHTML =
+        `<strong>触发第 ${idx + 1} 个额度池</strong><br>` +
+        `额度恢复：${fmtMinute(reset, true)}；覆盖工作：${fmtDuration(overlapMinutes(t, W))}` +
+        (segments.length ? `；工作片段：${segments.join('，')}` : '') +
+        (idle !== null && idle > 0 ? `；恢复后等待 ${fmtDuration(idle)} 再触发下一池` : '');
+
+      const badge = document.createElement('div');
+      const triggerDuringWork = work[mod(t, DAY)];
+      badge.className = 'badge' + (triggerDuringWork ? '' : ' off');
+      badge.textContent = triggerDuringWork ? '工作中触发' : '非工作时间触发';
+
+      item.appendChild(time);
+      item.appendChild(copy);
+      item.appendChild(badge);
+      scheduleList.appendChild(item);
+    });
+  }
+
+  function clearAll() {
+    work.fill(false);
+    renderWork();
+    scheduleList.innerHTML = '';
+    poolCount.textContent = '—';
+    resultSummary.textContent = '设置工作时间后点击“计算最优方案”。';
+  }
+
+  function setClockRange(start, end, value=true) {
+    for (let m = start; m < end; m++) work[m] = value;
+  }
+
+  function loadDefault() {
+    work.fill(false);
+    setClockRange(9*60, 12*60, true);
+    setClockRange(14*60, 17*60, true);
+    setClockRange(20*60, 22*60, true);
+    renderWork();
+    optimize();
+  }
+
+  function rerenderForPrecisionChange() {
+    renderWork();
+    optimize();
+  }
+
+
+  function buildAutomationPrompt(best) {
+    const offWorkTimes = best
+      ? best.starts.filter(t => !work[mod(t, DAY)]).map(t => fmtMinute(t))
+      : [];
+
+    if (!offWorkTimes.length) {
+      automationPrompt.value =
+        '当前最优方案不需要在非工作时间触发额度窗口。';
+      promptHelp.textContent =
+        '如果之后的最优方案包含非工作时间触发，这里会自动生成对应的定时提示词。';
+      return;
+    }
+
+    const timesText = offWorkTimes.join('、');
+    automationPrompt.value =
+      `确认当前使用的是 Work 模式。每天在 UTC+8 时间 ${timesText}，向我发送“你好”两个字，不做额外说明或思考。`;
+
+    promptHelp.textContent =
+      offWorkTimes.length === 1
+        ? '已根据当前最优方案填入 1 个非工作时间触发时刻。你可以直接修改后复制。'
+        : `已根据当前最优方案填入 ${offWorkTimes.length} 个非工作时间触发时刻。你可以直接修改后复制。`;
+  }
+
+  function updatePromptVisibility() {
+    promptPanel.classList.toggle('hidden', !allowOffWorkTrigger.checked);
+  }
+
+  copyPromptBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(automationPrompt.value);
+      const old = copyPromptBtn.textContent;
+      copyPromptBtn.textContent = '已复制';
+      setTimeout(() => copyPromptBtn.textContent = old, 1200);
+    } catch {
+      automationPrompt.focus();
+      automationPrompt.select();
+      document.execCommand('copy');
+      const old = copyPromptBtn.textContent;
+      copyPromptBtn.textContent = '已复制';
+      setTimeout(() => copyPromptBtn.textContent = old, 1200);
+    }
+  });
+
+  optimizeBtn.addEventListener('click', optimize);
+  exampleBtn.addEventListener('click', loadDefault);
+  clearBtn.addEventListener('click', clearAll);
+
+  windowValue.addEventListener('change', optimize);
+  windowUnit.addEventListener('change', optimize);
+  precision.addEventListener('change', rerenderForPrecisionChange);
+  minHours.addEventListener('change', optimize);
+  minMinutes.addEventListener('change', optimize);
+  requireCycle.addEventListener('change', optimize);
+  allowOffWorkTrigger.addEventListener('change', () => {
+    updatePromptVisibility();
+    optimize();
+  });
+
+  renderHourLabelsInto(hourLabels);
+  renderHourLabelsInto(resultHourLabels);
+  updatePromptVisibility();
+  renderWork();
+})();
+</script>
+</body>
+</html>
